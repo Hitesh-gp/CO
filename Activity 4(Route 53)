@@ -1,0 +1,260 @@
+Here’s a **step-by-step guide** to complete **Activity 4: Configure failover routing with Amazon Route 53** in detail. This activity ensures high availability for the Mom & Pop Café website by automatically redirecting traffic to a secondary server if the primary fails.
+
+---
+
+## ✅ **Overview of What You’ll Do**
+
+You’ll:
+
+1. Verify two EC2 instances (primary and secondary) are up and running.
+2. Use **AWS Systems Manager Parameter Store** to customize content.
+3. Create a **Route 53 health check** for the primary instance.
+4. Create **failover DNS records** in Route 53, so traffic switches to the backup server when the primary fails.
+5. Receive an **email alert** when the primary site goes down.
+
+---
+
+## 🧭 **Step-by-Step Instructions**
+
+---
+
+### 🔹 **Task 1: Confirm the Websites and Localize Them**
+
+1. **Open the AWS Management Console** from the lab environment (click **AWS** at the top of the lab page).
+
+2. **Go to the VPC Dashboard**:
+
+   * Navigate to **VPC > Subnets**.
+   * Confirm you see two subnets named like `MomPopCafe Public Subnet 1` and `MomPopCafe Public Subnet 2`.
+
+3. **Go to EC2 Dashboard**:
+
+   * Click **EC2 > Instances**.
+   * Confirm there are two instances:
+
+     * `MomPopCafeInstance1` (Primary)
+     * `MomPopCafeInstance2` (Secondary)
+   * Note which **Availability Zone** each is in (e.g., `eu-west-2a`, `eu-west-2b`).
+
+4. **Check the Website Content**:
+
+   * Copy the **Public IP** of `MomPopCafeInstance1` and paste it into your browser with `/mompopcafe` at the end.
+
+     ```
+     http://<Public-IP>/mompopcafe
+     ```
+   * Do the same for `MomPopCafeInstance2`.
+
+5. **Change Parameter Store Values** (Customize Website):
+
+   * Go to **Systems Manager > Parameter Store**.
+   * Edit the following:
+
+     * `/mompopcafe/currency`: Change `$` to `£` (if in the UK).
+     * `/mompopcafe/showServerInfo`: Change `false` to `true`.
+     * `/mompopcafe/timeZone`: Set to `Europe/London` (or as appropriate).
+
+6. **Refresh the Website**:
+
+   * Reload the `/mompopcafe` pages and confirm the currency and server info are updated.
+
+---
+
+### 🔹 **Task 2: Create a Health Check in Route 53**
+
+1. **Navigate to Route 53**:
+
+   * Go to **Services > Route 53 > Health checks**.
+   * Click **Create health check**.
+
+2. **Health Check Configuration**:
+
+   * **Name**: `Primary-Website-Health`
+   * **What to monitor**: Endpoint
+   * **Specify endpoint by**: IP address
+   * **IP Address**: Public IP of `MomPopCafeInstance1`
+   * **Path**: `mompopcafe`
+   * Expand **Advanced Configuration**:
+
+     * **Request interval**: Fast (10 seconds)
+     * **Failure threshold**: 2
+   * Click **Next**.
+
+3. **Set Up Alarm**:
+
+   * **Create alarm**: Yes
+   * **Send notification to**: New SNS topic
+
+     * **Topic name**: `Primary-Website-Health`
+     * **Recipient email**: Your email address
+   * Click **Create health check**.
+
+4. **Confirm Health Check Status**:
+
+   * Wait until status is **Healthy** (click refresh 🔄).
+
+5. **Confirm Email Subscription**:
+
+   * Check your email inbox.
+   * Click **Confirm Subscription** in the email from AWS Notifications.
+
+---
+
+### 🔹 **Task 3: Configure Route 53 Record Sets**
+
+#### 🛑 Pre-check:
+
+You’ll be given a domain like `1234567890.vocareum.training`. This is your Route 53 hosted zone.
+
+---
+
+#### 🔸 **Task 3.1: Create the Primary A Record**
+
+1. **Go to Route 53 > Hosted zones**.
+
+   * Click on your hosted zone (e.g., `1234567890.vocareum.training`).
+
+2. **Click “Create Record”**:
+
+   * **Record name**: `www`
+   * **Record type**: A – IPv4 address
+   * **Value**: Public IP of `MomPopCafeInstance1`
+   * **TTL (seconds)**: 15
+   * **Routing policy**: Failover
+   * **Failover record type**: Primary
+   * **Health check ID**: Select `Primary-Website-Health`
+   * **Record ID**: `Primary1`
+   * Click **Create records**.
+
+---
+
+#### 🔸 **Task 3.2: Create the Secondary A Record**
+
+1. **Click “Create Record”** again:
+
+   * **Record name**: `www`
+   * **Record type**: A – IPv4 address
+   * **Value**: Public IP of `MomPopCafeInstance2`
+   * **TTL (seconds)**: 15
+   * **Routing policy**: Failover
+   * **Failover record type**: Secondary
+   * **Record ID**: `Secondary1`
+   * Click **Create records**.
+
+---
+
+## ✅ **Final Verification**
+
+1. **Visit the Website**:
+
+   * Open `http://www.<your-domain>.vocareum.training/mompopcafe` in the browser.
+   * You should reach the **primary** instance.
+
+2. **Test Failover** *(Optional - if allowed by lab)*:
+
+   * Stop `MomPopCafeInstance1` from the EC2 console.
+   * Wait for the health check to mark it **unhealthy** (can take 60–90 seconds).
+   * Refresh your browser — the site should now load from `MomPopCafeInstance2`.
+
+3. **Receive Email Alert**:
+
+   * Check your email for the health check failure notification.
+
+---
+
+## 🎉 **You’ve Completed the Activity!**
+
+You now have:
+
+* A working **failover setup** using Route 53.
+* A **health check** monitoring your primary server.
+* An **email alert** system when the primary site goes down.
+
+Would you like a PDF or markdown version of these instructions?
+
+
+
+
+Thanks for your question — you're right to be confused! The **latest Route 53 console** doesn't **explicitly show the “Create Alarm” section** during health check creation like older versions did. But don’t worry — you **can still create the CloudWatch alarm and SNS notification** for your Route 53 health check manually.
+
+Here’s how to do it **step-by-step**:
+
+---
+
+## ✅ Part 1: Create Route 53 Health Check
+
+1. Go to **AWS Management Console** > **Route 53** > **Health Checks**.
+2. Click **Create health check**.
+3. **General configuration:**
+
+   * Name: `Primary-Website-Health`
+4. **What to monitor:**
+
+   * Choose: **Endpoint**
+   * Specify endpoint:
+
+     * Protocol: `HTTP`
+     * Domain name: Use **public IP** of primary EC2 instance
+     * Path: `/mompopcafe` (or just `/` if no specific path)
+5. **Health check regions and thresholds:**
+
+   * Use default (recommended)
+6. Click **Create health check**.
+
+---
+
+## ✅ Part 2: Create SNS Topic for Alerts
+
+1. Go to **Amazon SNS** > **Topics** > **Create topic**.
+2. Choose **Standard**.
+3. **Name**: `Primary-Website-Health`
+4. Click **Create topic**.
+
+---
+
+### 📩 Add Email Subscription
+
+1. Open the newly created topic.
+2. Click **Create subscription**.
+3. Protocol: `Email`
+4. Endpoint: Enter **your email address** (accessible inbox).
+5. Click **Create subscription**.
+6. Go to your email inbox and **confirm the subscription** by clicking the link in the AWS email.
+
+---
+
+## ✅ Part 3: Create CloudWatch Alarm for Health Check Status
+
+1. Go to **Amazon CloudWatch** > **Alarms** > **Create alarm**.
+2. Click **Select metric**.
+3. In the search bar, type `Route 53` and click on:
+
+   * **Route 53 Metrics by Health Check**
+4. Select the health check named `Primary-Website-Health`.
+5. Choose the metric: **HealthCheckStatus**
+
+   * (It will show `1` if healthy, `0` if unhealthy)
+6. Click **Select metric**.
+7. Set conditions:
+
+   * Threshold type: `Static`
+   * Whenever HealthCheckStatus is **less than 1**
+   * For consecutive periods: 2 of 2 (or keep default)
+8. Click **Next**.
+9. **Notification settings:**
+
+   * In Alarm state trigger: `In alarm`
+   * Select existing SNS topic: `Primary-Website-Health`
+10. Click **Next**, then **Create alarm**.
+
+---
+
+## 🔍 Verify Setup
+
+1. Go to **Route 53 > Health checks**, confirm the health status becomes **Healthy** after 30–60 seconds.
+2. Go to **CloudWatch > Alarms**, ensure your alarm shows `OK`.
+3. To test it, stop the primary EC2 instance — health check will go `Unhealthy`, and you’ll get an **email alert**.
+
+---
+
+Let me know if you'd like screenshots or a quick script to automate this!
