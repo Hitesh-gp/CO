@@ -1,0 +1,111 @@
+Perfect! If you want to complete both **Challenge 1 (SSH access)** and **Challenge 2 (Web server troubleshooting)** using **PuTTY** on Windows, follow the instructions below:
+
+---
+
+## ✅ **Pre-requisites (One-Time Setup for PuTTY)**
+
+Before you can SSH with PuTTY, convert your `.pem` key to `.ppk`.
+
+### 🔁 Convert `.pem` to `.ppk` using PuTTYgen:
+
+1. Open **PuTTYgen** (comes with PuTTY installation).
+2. Click **Load**, change file type to `All Files (*.*)` and select your `.pem` key.
+3. Click **Save private key** and save it as `my-key.ppk`.
+
+---
+
+## 🔐 **Challenge 1: Connect to the EC2 Instance Using PuTTY**
+
+### 🧭 Step-by-Step:
+
+1. Open **PuTTY**.
+
+2. In **Host Name**, enter:
+
+   ```
+   ec2-user@<Public-DNS>
+   ```
+
+   Example:
+
+   ```
+   ec2-user@ec2-3-88-135-15.compute-1.amazonaws.com
+   ```
+
+3. On the left pane, go to:
+
+   * `Connection > SSH > Auth`
+   * Click **Browse** and select your `.ppk` private key (converted from .pem)
+
+4. Click **Open** to connect.
+
+---
+
+### 🔍 If SSH Fails, Check These:
+
+* **Security Group** → Inbound rule should allow **SSH (port 22)** from your IP (or 0.0.0.0/0 for test)
+* **Instance is Running**
+* **Correct Key Pair**
+* **Public IP/DNS exists**
+* **Network ACL allows inbound SSH**
+* **Correct username**: use `ec2-user` for Amazon Linux
+
+---
+
+### ✅ Instructor Questions for Challenge 1:
+
+* **Problem**: SSH access was blocked because security group did not allow port 22.
+* **Fix**: Modified inbound rule in security group to allow SSH from my IP.
+
+---
+
+## 🌐 **Challenge 2: Troubleshoot the Web Server**
+
+### 📡 Step-by-Step in PuTTY:
+
+1. SSH into instance via PuTTY as above.
+
+2. Check web server (try Apache first):
+
+   ```bash
+   sudo systemctl status httpd
+   ```
+
+3. If not installed, install and start it:
+
+   ```bash
+   sudo yum install -y httpd
+   sudo systemctl start httpd
+   sudo systemctl enable httpd
+   ```
+
+4. Check if the default web page is loading:
+
+   ```bash
+   curl http://localhost
+   ```
+
+5. **Security Group** must allow **HTTP (port 80)**:
+
+   * Go to EC2 → Security Group → Edit Inbound Rules → Add rule:
+
+     * Type: **HTTP**
+     * Port: **80**
+     * Source: **0.0.0.0/0**
+
+6. Now, on your browser, open:
+
+   ```
+   http://<EC2 Public IP>
+   ```
+
+---
+
+### ✅ Instructor Questions for Challenge 2:
+
+* **Problem**: Web server was not installed or not started. Also, port 80 was not open.
+* **Fix**: Installed Apache (`httpd`), started the service, and allowed HTTP traffic in the security group.
+
+---
+
+Would you like a visual walkthrough with screenshots or commands you can copy-paste?
