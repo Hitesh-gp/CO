@@ -1,0 +1,69 @@
+Great! Here's a **step-by-step solution for the challenge** at the end of **Activity 1** (download the `lab_policy` IAM policy using the AWS CLI), **entirely from the command line**:
+
+---
+
+### ✅ Step 1: **List the available IAM policies to find `lab_policy`**
+
+Use the `list-policies` command:
+
+```bash
+aws iam list-policies --scope Local --query "Policies[?PolicyName=='lab_policy']"
+```
+
+This will return details including the **ARN** (Amazon Resource Name) of the `lab_policy`. You’ll need that ARN for the next step.
+
+Example ARN (you will get the actual one in your output):
+
+```
+"Arn": "arn:aws:iam::123456789012:policy/lab_policy"
+```
+
+---
+
+### ✅ Step 2: **Get the default policy version ID**
+
+Run the following command with your actual policy ARN:
+
+```bash
+aws iam get-policy --policy-arn arn:aws:iam::123456789012:policy/lab_policy
+```
+
+This returns something like:
+
+```json
+{
+    "Policy": {
+        "PolicyName": "lab_policy",
+        "PolicyId": "ABCDEF1234567890",
+        "Arn": "arn:aws:iam::123456789012:policy/lab_policy",
+        "DefaultVersionId": "v1",
+        ...
+    }
+}
+```
+
+Note the `"DefaultVersionId"` — in this case, it's `v1`.
+
+---
+
+### ✅ Step 3: **Get the actual policy document**
+
+Use the policy ARN and version ID from the previous step:
+
+```bash
+aws iam get-policy-version --policy-arn arn:aws:iam::123456789012:policy/lab_policy --version-id v1 --query "PolicyVersion.Document" --output json > lab_policy.json
+```
+
+This command:
+
+* Retrieves the JSON policy document
+* Outputs only the `Document` portion
+* Saves it to a file called `lab_policy.json`
+
+---
+
+### ✅ You’ve completed the challenge!
+
+You now have the `lab_policy.json` file downloaded using only the AWS CLI.
+
+Let me know if you'd like help understanding or validating the contents of the policy!
