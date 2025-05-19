@@ -1,0 +1,126 @@
+Here are the **step-by-step commands** to complete the **"Task 3: Challenge - Synchronize Files With Amazon S3"** using the AWS CLI on your **EC2 instance**:
+
+---
+
+### ✅ **Step 1: Download and Unzip the Sample Files**
+
+```bash
+wget https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/CUR-TF-200-RESOPS/lab5vocareum/files.zip
+unzip files.zip
+```
+
+---
+
+### ✅ **Step 2: Enable Versioning on Your Amazon S3 Bucket**
+
+Assuming your bucket name is `my-lab-bucket`. Replace it with your actual bucket name.
+
+```bash
+aws s3api put-bucket-versioning --bucket my-lab-bucket --versioning-configuration Status=Enabled
+```
+
+To verify:
+
+```bash
+aws s3api get-bucket-versioning --bucket my-lab-bucket
+```
+
+---
+
+### ✅ **Step 3: Sync Local Folder with Amazon S3 Bucket**
+
+Assume your files were unzipped into a folder called `files`.
+
+```bash
+aws s3 sync files/ s3://my-lab-bucket
+```
+
+---
+
+### ✅ **Step 4: Delete a File Locally**
+
+For example, delete `file1.txt`:
+
+```bash
+rm files/file1.txt
+```
+
+---
+
+### ✅ **Step 5: Sync Again With --delete Option**
+
+This will delete `file1.txt` from S3 as well (but retains the previous version due to versioning):
+
+```bash
+aws s3 sync files/ s3://my-lab-bucket --delete
+```
+
+---
+
+### ✅ **Step 6: Recover the Deleted File Using Versioning**
+
+#### 🔍 a) List All Versions of the Deleted File:
+
+```bash
+aws s3api list-object-versions --bucket my-lab-bucket --prefix file1.txt
+```
+
+Look for the version ID of the file where `IsLatest=false` and `DeleteMarker=true` for the delete, and the earlier `VersionId` for the real content.
+
+#### 💾 b) Download the Previous Version of the File:
+
+```bash
+aws s3api get-object --bucket my-lab-bucket --key file1.txt --version-id <version-id> file1.txt
+```
+
+Replace `<version-id>` with the correct version ID from the previous step.
+
+#### 🔁 c) Move It Back to the Folder and Sync Again:
+
+```bash
+mv file1.txt files/
+aws s3 sync files/ s3://my-lab-bucket
+```
+
+---
+
+Let me know your bucket name if you want these commands customized.
+
+
+
+
+
+
+
+
+
+
+Thanks for sharing the output. The issue is that you're trying to **download a delete marker version**, which is **not allowed** — Amazon S3 throws a `MethodNotAllowed` error when you attempt to retrieve a version ID that corresponds to a **delete marker**.
+
+### ✅ Here's how to correctly **recover the previous version** of `file1.txt`:
+
+From your output:
+
+* **Delete marker VersionId (not usable for download)**: `JGMXWT45fLX6yEdZKKO6zJEVQzpd5bdO`
+* ✅ **Correct VersionId to download**: `cNkpuxsFztIUFh1tX39esnz17ZP90mh0` (the actual file)
+
+---
+
+### ✅ Run this command instead:
+
+```bash
+aws s3api get-object --bucket hit1231 --key file1.txt --version-id cNkpuxsFztIUFh1tX39esnz17ZP90mh0 file1.txt
+```
+
+This will restore the deleted file `file1.txt` into your current EC2 directory.
+
+---
+
+### ✅ (Optional) Sync it back to S3 if needed:
+
+```bash
+mv file1.txt files/
+aws s3 sync files/ s3://hit1231
+```
+
+Let me know if you'd like to **remove the delete marker** as well (to make `file1.txt` the latest version).
