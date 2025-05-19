@@ -1,0 +1,225 @@
+Certainly! Here's a **detailed explanation** of the **complete CloudFormation lab process** from **Module 11: Lab 8 - Automation with CloudFormation**, broken down into logical tasks:
+
+---
+
+## 🔧 **What is CloudFormation?**
+
+AWS CloudFormation allows you to **define infrastructure as code**. You write a template in YAML or JSON to define AWS resources (like EC2, VPC, S3, etc.), and CloudFormation deploys them **automatically and consistently**.
+
+---
+
+## ✅ **Lab Objective**
+
+To deploy, update, and delete AWS infrastructure using CloudFormation templates.
+
+---
+
+## ⏳ **Lab Duration**: \~45 minutes
+
+---
+
+## 🔐 **Access the AWS Management Console**
+
+1. Click **Start Lab** to get temporary AWS credentials and resources.
+2. Wait for **"Lab status: ready"**, then close the panel.
+3. Click **AWS** to open the AWS Console in a new browser tab (logged in automatically).
+4. **Do not change the AWS Region** during the lab.
+
+---
+
+## 🧪 **Task 1: Deploy a CloudFormation Stack with VPC & Security Group**
+
+### 🔸 Download & Review the Template
+
+* Download `task1.yaml` (provided in the lab).
+* Open it in a text editor (like Notepad++ or VS Code).
+* YAML structure:
+
+  * **Parameters**: Accept user input (e.g., CIDR block).
+  * **Resources**: Define AWS resources (e.g., VPC, Security Group).
+  * **Outputs**: Show info like the default security group ID.
+
+### 🔸 Create Stack in CloudFormation
+
+1. Go to **CloudFormation** → **Create stack** → **With new resources (standard)**.
+2. Choose **Upload a template file** → Upload `task1.yaml`.
+3. Click **Next**.
+4. Set:
+
+   * **Stack name**: `Lab`
+   * Leave default **parameter values** for CIDR ranges.
+5. Click **Next** → leave stack options as default.
+6. Click **Next** → **Create stack**.
+
+### 🔸 Monitor the Stack
+
+* Status shows `CREATE_IN_PROGRESS`.
+* Use **Events tab** to track progress.
+* Use **Resources tab** to see what's created (VPC, Subnet, Security Group).
+* When done, status will be `CREATE_COMPLETE`.
+
+### 🔸 Optional
+
+Check the VPC in the **VPC Console**.
+
+---
+
+## 🪣 **Task 2: Add an S3 Bucket to the Stack**
+
+### 🔸 Edit the Template
+
+* Add the following under the `Resources:` section:
+
+```yaml
+  MyS3Bucket:
+    Type: AWS::S3::Bucket
+```
+
+> Note:
+
+* Indentation matters (2 spaces).
+* This creates an S3 bucket with a random name (no properties needed).
+
+### 🔸 Update the Stack
+
+1. Go back to **CloudFormation**.
+2. Select the **Lab** stack → **Update**.
+3. Choose **Replace current template** → Upload the modified template.
+4. Click **Next** through the next pages.
+5. CloudFormation shows a **preview of changes** (only S3 bucket being added).
+6. Click **Update stack**.
+
+### 🔸 Monitor the Stack
+
+* Status changes to `UPDATE_IN_PROGRESS` → then `UPDATE_COMPLETE`.
+* Under **Resources**, you’ll see the S3 bucket.
+
+### 🔸 Optional
+
+Check the **S3 Console** for the new bucket.
+
+---
+
+## 💻 **Task 3: Add an EC2 Instance to the Stack**
+
+### 🔸 Add AMI Parameter
+
+In the **Parameters** section, add:
+
+```yaml
+  AmazonLinuxAMIID:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+```
+
+> This allows AWS to get the latest Amazon Linux 2 AMI via Systems Manager (SSM), making the template portable across regions.
+
+### 🔸 Add EC2 Resource
+
+Under `Resources:`, add:
+
+```yaml
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAMIID
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref AppSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: App Server
+```
+
+### 🔸 Explanation:
+
+* `!Ref` is used to reference existing resources in the same template.
+* EC2 instance uses the AMI ID from parameter, security group from earlier, and subnet from the same template.
+
+### 🔸 Update the Stack
+
+1. In CloudFormation, choose **Update**.
+2. Upload the newly modified template.
+3. Choose **Next** through the next steps.
+4. Preview should show EC2 instance will be **added**.
+5. Click **Update stack**.
+
+### 🔸 Monitor Stack
+
+* Wait for `UPDATE_COMPLETE`.
+* Check **Resources** for the EC2 instance.
+
+### 🔸 Optional
+
+Go to the **EC2 Console** and verify the instance (should have name "App Server").
+
+---
+
+## ❌ **Task 4: Delete the Stack**
+
+### 🔸 Deleting Everything
+
+1. In CloudFormation, select the **Lab** stack.
+2. Click **Delete**, confirm deletion.
+3. CloudFormation changes status to `DELETE_IN_PROGRESS`.
+
+### 🔸 What Happens
+
+* All resources created by the stack (EC2, S3 bucket, VPC, Security Group) will be automatically deleted.
+* After a few minutes, the stack will disappear from the list.
+
+### 🔸 Optional
+
+Verify in **EC2**, **S3**, and **VPC consoles** that all resources are gone.
+
+---
+
+## 📂 Sample Template Snapshots
+
+### ✅ **Add S3 Bucket**
+
+```yaml
+Resources:
+  MyS3Bucket:
+    Type: AWS::S3::Bucket
+```
+
+---
+
+### ✅ **Add EC2 Instance with Parameter**
+
+```yaml
+Parameters:
+  AmazonLinuxAMIID:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+Resources:
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAMIID
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref AppSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: App Server
+```
+
+---
+
+## 🧠 Summary
+
+| Task  | Description                                                                   |
+| ----- | ----------------------------------------------------------------------------- |
+| **1** | Launch a basic CloudFormation stack with VPC & Security Group                 |
+| **2** | Modify the stack to add an S3 bucket                                          |
+| **3** | Modify the stack to add an EC2 instance using AMI, subnet, and security group |
+| **4** | Delete the entire stack and all associated resources                          |
+
+---
+
+Would you like the complete final `task3.yaml` file for reference?
