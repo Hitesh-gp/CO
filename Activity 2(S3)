@@ -1,0 +1,326 @@
+Here’s a step-by-step summary of what you need to do to complete **Module 2: Activity 2 – Create a Website on S3** from your AWS Academy lab:
+
+---
+
+### ✅ **Task 1: Connect to EC2 Instance via SSH**
+
+**For Windows (using PuTTY):**
+
+1. Download `labsuser.ppk` from the **Details** section.
+2. Open PuTTY.
+3. Set the host name as the **Public IP** or **DNS** of the EC2 instance.
+4. Under *Connection > SSH > Auth*, select your `.ppk` file.
+5. Set *keepalives* to 30 seconds to avoid timeouts.
+6. Open the session and login as: `ec2-user`.
+
+**For macOS/Linux (using Terminal):**
+
+1. Download `labsuser.pem` from **Details**.
+2. Run:
+
+   ```bash
+   cd ~/Downloads
+   chmod 400 labsuser.pem
+   ssh -i labsuser.pem ec2-user@<public-ip>
+   ```
+3. Type `yes` when prompted.
+
+---
+
+### ✅ **Task 2: Configure AWS CLI**
+
+Run the following command:
+
+```bash
+aws configure
+```
+
+Provide:
+
+* **AWS Access Key ID** – from **Details**
+* **AWS Secret Access Key** – from **Details**
+* **Region** – `eu-west-2`
+* **Output format** – `json`
+
+---
+
+### ✅ **Task 3: Create S3 Bucket**
+
+Create a **globally unique** bucket name like:
+
+```bash
+aws s3api create-bucket --bucket darsh123456 --region eu-west-2 --create-bucket-configuration LocationConstraint=eu-west-2
+```
+
+You’ll see a JSON response with the location of the bucket if successful.
+
+---
+
+### ✅ **Task 4: Analyze IAM User Permissions**
+
+1. In the AWS Console, search and go to **IAM** service.
+2. Under **Users**, select `awsS3user`.
+3. Check:
+
+   * **Permissions** tab > Expand `lab_S3policy` > View JSON.
+
+     * First block: Allows all S3 actions (`"s3:*"`).
+     * Second block: Denies specific S3 object actions (to restrict in the lab).
+4. Under **Security Credentials** tab, copy the **Console Sign-In URL**.
+5. Open this link in a **Private Window** (Incognito) or **another browser**.
+6. Login as:
+
+   * **IAM user**: `awsS3user`
+   * **Password**: From **Details** under `IAMUserPassword`.
+
+> You now have two sessions:
+>
+> * Main browser = Admin session
+> * Private window = IAM user session (S3 only)
+
+---
+
+Would you like step-by-step instructions to **upload website files and host the static site on S3** next?
+
+Here's a **detailed step-by-step explanation** to complete the remaining tasks in **Module 2: Activity 2** for the AWS Academy lab, including creating a batch file to automate updates to your static website hosted on Amazon S3:
+
+---
+
+## 🧩 **Task 5: Extract Website Files**
+
+1. **Go to the folder containing the compressed website files**:
+
+   ```bash
+   cd ~/sysops-activity-files
+   ```
+
+2. **Extract the files**:
+
+   ```bash
+   tar xvzf static-website.tar.gz
+   ```
+
+   * `x`: extract
+   * `v`: verbose (lists files)
+   * `z`: decompress `.gz`
+   * `f`: file name to extract
+
+3. **Check if files were extracted**:
+
+   ```bash
+   ls
+   ```
+
+   You should see:
+
+   ```
+   static-website.tar.gz  index.html  css/  images/
+   ```
+
+4. **Remove the `.tar.gz` file (compressed archive)**:
+
+   ```bash
+   rm static-website.tar.gz
+   ```
+
+---
+
+## 🌐 **Task 6: Update Bucket Controls & Upload Website**
+
+> Replace `<my-bucket>` in each command with **your actual bucket name** (e.g., `darsh123456`).
+
+### 1. **Set Bucket Ownership Controls**
+
+```bash
+aws s3api put-bucket-ownership-controls \
+--bucket <my-bucket> \
+--ownership-controls "Rules=[{ObjectOwnership=BucketOwnerPreferred}]"
+```
+
+This makes sure that the **bucket owner** has full control over uploaded objects, even if uploaded by other users.
+
+---
+
+### 2. **Adjust Public Access Settings**
+
+```bash
+aws s3api put-public-access-block \
+--bucket <my-bucket> \
+--public-access-block-configuration "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
+```
+
+This allows your S3 bucket to **accept public ACLs and policies**, which is required for a public website.
+
+---
+
+### 3. **Enable Static Website Hosting**
+
+```bash
+aws s3 website s3://<my-bucket>/ --index-document index.html
+```
+
+This tells S3 to treat your bucket like a website, serving `index.html` as the homepage.
+
+---
+
+### 4. **Upload Website Files**
+
+```bash
+aws s3 cp . s3://<my-bucket>/ --recursive --acl public-read
+```
+
+* `--recursive`: uploads all files/folders in current directory.
+* `--acl public-read`: makes files readable publicly (required for website access).
+
+Run from inside the `~/sysops-activity-files/` folder.
+
+---
+
+### 5. **Verify Upload**
+
+```bash
+aws s3 ls s3://<my-bucket>
+```
+
+You should see the list of uploaded files (like `index.html`, `css/`, `images/`).
+
+---
+
+### 6. **Open the Website**
+
+Go to your browser and open the **website endpoint**:
+
+```
+http://<my-bucket>.s3-website.eu-west-2.amazonaws.com
+```
+
+You should see the café website.
+
+---
+
+## 🛠️ **Task 7: Automate Updates with a Batch Script**
+
+### 1. **Check Command History**
+
+```bash
+history
+```
+
+Look for the `aws s3 cp` command you used in Task 6.
+
+---
+
+### 2. **Create the Batch Script**
+
+```bash
+cd ~
+touch update-website.sh
+vi update-website.sh
+```
+
+In the `vi` editor:
+
+* Press `A` to enter **insert mode**.
+* Add the following (replace `<my-bucket>`):
+
+```bash
+#!/bin/bash
+aws s3 cp ~/sysops-activity-files/ s3://<my-bucket>/ --recursive --acl public-read
+```
+
+* Press `Esc`, type `:wq`, and press `Enter` to **save and exit**.
+
+---
+
+### 3. **Make the Script Executable**
+
+```bash
+chmod +x update-website.sh
+```
+
+---
+
+### 4. **Make Changes to the Website**
+
+Open `index.html`:
+
+```bash
+vi ~/sysops-activity-files/index.html
+```
+
+In `vi`:
+
+* Press `/` and type `bgcolor` to search.
+* Make these changes:
+
+| Original Code                       | Change to             |
+| ----------------------------------- | --------------------- |
+| `bgcolor="aquamarine"` (first one)  | `bgcolor="gainsboro"` |
+| `bgcolor="orange"`                  | `bgcolor="cornsilk"`  |
+| `bgcolor="aquamarine"` (second one) | `bgcolor="gainsboro"` |
+
+After editing:
+
+* Press `Esc`, type `:wq`, and hit `Enter`.
+
+---
+
+### 5. **Run the Script to Upload Changes**
+
+```bash
+./update-website.sh
+```
+
+You should see output like:
+
+```
+upload: ./index.html to s3://<my-bucket>/index.html
+...
+```
+
+---
+
+### 6. **Refresh the Website**
+
+Go back to your browser and **refresh the page** to see the color changes.
+
+---
+
+## ⭐ **Optional Challenge: Use `sync` Instead of `cp`**
+
+### 1. **Edit the script**:
+
+```bash
+vi update-website.sh
+```
+
+Replace this line:
+
+```bash
+aws s3 cp ~/sysops-activity-files/ s3://<my-bucket>/ --recursive --acl public-read
+```
+
+With this:
+
+```bash
+aws s3 sync ~/sysops-activity-files/ s3://<my-bucket>/ --acl public-read
+```
+
+Then save (`:wq`).
+
+---
+
+### 2. **Test Efficiency**
+
+* Make a small change to `index.html` again.
+* Run:
+
+```bash
+./update-website.sh
+```
+
+* Only changed files will be uploaded.
+
+---
+
+Let me know if you'd like help modifying the HTML further or converting this to a scheduled cron job later!
