@@ -1,0 +1,215 @@
+ACTIVITY :7
+Task 1: Connect to the CLI Host EC2 Instance Using SSH (macOS/Linux)
+Step 1: Download the SSH Key
+•	Open the Details dropdown above your lab instructions.
+•	Click Show to reveal credentials.
+•	Click Download PEM to save the file labsuser.pem.
+•	Save it to a known location (e.g., ~/Downloads).
+________________________________________
+Step 2: Set Permissions on the PEM File
+•	Open Terminal on your Mac.
+•	Navigate to the directory where you saved the PEM file:
+cd ~/Downloads
+•	Change the permissions of the key file to be read-only:
+chmod 400 labsuser.pem
+________________________________________
+Step 3: Get the Public IP of the CLI Host
+•	In the Details dropdown > Show, locate the CliHostIP value.
+•	Copy this IP address.
+________________________________________
+Step 4: Connect to the CLI Host via SSH
+•	Run the following command (replace <CliHostIP> with the actual IP address):
+ssh -i labsuser.pem ec2-user@<CliHostIP>
+•	When prompted with:
+Are you sure you want to continue connecting (yes/no)?
+Type yes and press Enter.
+•	You will be connected to the CLI Host EC2 instance.
+________________________________________
+Task 1.2: Configure the AWS CLI on the CLI Host EC2 Instance
+Step 1: Discover the AWS Region
+•	On the connected CLI Host terminal, run:
+curl http://169.254.169.254/latest/dynamic/instance-identity/document | grep region
+•	Note the region value (e.g., us-east-1).
+________________________________________
+Step 2: Configure AWS CLI Credentials
+•	Run the AWS CLI configuration command:
+aws configure
+•	Enter the following when prompted:
+o	AWS Access Key ID: Copy from the Details dropdown > Show (look for AccessKey).
+o	AWS Secret Access Key: Copy from the same Credentials section (SecretKey).
+o	Default region name: Use the region you discovered above (e.g., us-east-1).
+o	Default output format: Enter json.
+Task 2: Enable VPC Flow Logs
+________________________________________
+Step 1: Create an S3 Bucket for VPC Flow Logs
+1.	Open your terminal on the CLI host (or wherever AWS CLI is configured).
+2.	Run this command to create an S3 bucket:
+aws s3api create-bucket --bucket flowlog#### --region <region> --create-bucket-configuration LocationConstraint=<region>
+•	Replace #### with four random numbers (e.g., flowlog1234).
+•	Replace <region> with the AWS region where your EC2 instances are running (e.g., us-east-2, eu-west-2, etc.).
+Important:
+•	If your region is us-east-1, omit the --create-bucket-configuration LocationConstraint=<region> part, like this:
+aws s3api create-bucket --bucket flowlog1234 --region us-east-1
+________________________________________
+Step 2: Get the VPC ID of VPC1
+Run this command to find the VPC ID for the VPC named VPC1:
+aws ec2 describe-vpcs --query 'Vpcs[*].[VpcId,Tags[?Key==`Name`].Value,CidrBlock]' --filters "Name=tag:Name,Values='VPC1'"
+•	Note down the VpcId from the output. It will look like vpc-0abcd1234efgh5678.
+________________________________________
+Step 3: Enable VPC Flow Logs on VPC1
+Run this command to create the flow logs:
+aws ec2 create-flow-logs --resource-type VPC --resource-ids <vpc-id> --traffic-type ALL --log-destination-type s3 --log-destination arn:aws:s3:::flowlog####
+•	Replace <vpc-id> with the VPC ID you got in Step 2.
+•	Replace flowlog#### with your S3 bucket name from Step 1.
+________________________________________
+Step 4: Confirm the Flow Log Creation
+Run this command:
+aws ec2 describe-flow-logs
+•	Check the output for:
+o	FlowLogStatus = ACTIVE
+o	The log destination ARN pointing to your S3 bucket.
+Task 3: Analyze and troubleshoot access to resources on the Web Server EC2 instance
+________________________________________
+Initial context:
+•	Web Server instance is in public subnet of VPC1.
+•	The webpage does not load (ERR_CONNECTION_TIMED_OUT) when browsing the public IP.
+•	SSH connection to the Web Server also times out.
+•	You have confirmed the instance is running and you have the correct key pair.
+________________________________________
+Challenge #1: Website is unreachable and SSH fails
+Step 1: Check instance status and basic info
+Run this command to get key info:
+aws ec2 describe-instances --filter "Name=ip-address,Values='<WebServerIP>'" --query 'Reservations[*].Instances[*].[State.Name,PrivateIpAddress,InstanceId,SecurityGroups[*].GroupId,SubnetId,KeyName]'
+•	Confirm State.Name is "running".
+•	Get SecurityGroupIds, SubnetId, KeyName (should match your key).
+________________________________________
+Step 2: Check if any ports are open on the Web Server
+On CLI Host:
+sudo yum install -y nmap
+nmap <WebServerIP>
+•	If no ports are open (especially port 80 for HTTP and 22 for SSH), then something blocks incoming connections.
+•	If ports are open, web and SSH should work, so problem lies elsewhere.
+________________________________________
+Step 3: Check Security Group attached to the Web Server instance
+1.	Get security group IDs from step 1.
+2.	Describe the security groups:
+aws ec2 describe-security-groups --group-ids <WebServerSecurityGroupId>
+3.	Analyze inbound rules:
+•	Must have rules that allow inbound HTTP (port 80) and SSH (port 22) from your IP or 0.0.0.0/0.
+If inbound rules are missing or incorrect, add them with:
+aws ec2 authorize-security-group-ingress --group-id <GroupID> --protocol tcp --port 80 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-id <GroupID> --protocol tcp --port 22 --cidr <YourPublicIP>/32
+________________________________________
+Step 4: Check Route Table associated with the subnet of the Web Server instance
+Get subnet ID from step 1.
+aws ec2 describe-route-tables --filter "Name=association.subnet-id,Values='<VPC1PublicSubnetID>'"
+•	Confirm there is a route that sends 0.0.0.0/0 traffic to the internet gateway (IGW).
+•	If missing, add route:
+aws ec2 create-route --route-table-id <RouteTableId> --destination-cidr-block 0.0.0.0/0 --gateway-id <InternetGatewayId>
+________________________________________
+Step 5: After confirming the above, refresh the browser page at http://<WebServerIP>.
+•	You should now see "Hello from your web server!".
+•	Visiting http://<WebServerIP>/mompopcafe/ should show the cafe website.
+________________________________________
+Challenge #2: SSH still fails despite above fixes
+________________________________________
+Step 1: Verify the Network ACLs attached to the public subnet
+aws ec2 describe-network-acls --filter "Name=association.subnet-id,Values='<VPC1PublicSubnetID>'" --query 'NetworkAcls[*].[NetworkAclId,Entries]'
+•	Look for any DENY rules that block inbound or outbound traffic for port 22 or ephemeral ports.
+•	Network ACL rules are stateless: if inbound is allowed but outbound is denied, connection fails.
+________________________________________
+Step 2: Analyze NACL entries
+•	Each entry has RuleNumber, Protocol, Port Range, Egress (true=outbound, false=inbound), RuleAction (allow or deny), and CIDR block.
+•	Ensure:
+o	Inbound: Allow port 22 (TCP) from your IP or 0.0.0.0/0
+o	Outbound: Allow ephemeral ports (1024-65535) or all outbound (0.0.0.0/0).
+________________________________________
+Step 3: Delete any blocking NACL entries (that deny port 22 or related traffic)
+Example:
+aws ec2 delete-network-acl-entry --network-acl-id <NetworkAclId> --rule-number <RuleNumber> --egress false
+•	Repeat for any other problematic entries.
+________________________________________
+Step 4: Test SSH connection again:
+ssh -i labsuser.pem ec2-user@<WebServerIP> -o ConnectTimeout=10
+•	You should now connect successfully.
+________________________________________
+Step 5: Verify hostname on web server after SSH:
+hostname
+•	Should return: web-server
+
+
+Task 4.1: Download and Extract the Flow Logs
+1.	Reconnect to your CLI Host EC2 instance:
+ssh -i your-key.pem ec2-user@<CLI-Host-IP>
+2.	Create a local directory for flow logs:
+mkdir flowlogs
+cd flowlogs
+3.	List your S3 buckets to find your flow logs bucket name:
+aws s3 ls
+Look for a bucket name that looks like flowlog#### or something similar.
+4.	Download the flow logs from the bucket:
+Replace <flowlog####> with your actual bucket name from the previous step.
+aws s3 cp s3://<flowlog####>/ . --recursive
+You should see many files downloaded.
+5.	Navigate inside the downloaded folders to find the log files:
+cd AWSLogs/<account-number>/vpcflowlogs/<region>/yyyy/mm/dd
+ls
+You will see multiple files with the .log.gz extension — these are compressed flow log files.
+6.	Extract the logs:
+gunzip *.gz
+Now all .gz files will become plain .log files.
+7.	Verify extraction:
+ls
+You should see the .log files ready for analysis.
+________________________________________
+Task 4.2: Analyze the Logs
+Step 1: View the structure of a log file
+Pick a log file name from your directory, for example:
+head <log-file-name>.log
+You will see the header and log entries with fields like:
+•	version
+•	account-id
+•	interface-id
+•	source-address
+•	destination-address
+•	source-port
+•	destination-port
+•	protocol
+•	packets
+•	bytes
+•	start-time
+•	end-time
+•	action (ACCEPT or REJECT)
+•	log-status
+Step 2: Search for rejected traffic
+Find all lines with REJECT in all logs:
+grep -rn REJECT .
+Count how many rejected entries:
+grep -rn REJECT . | wc -l
+Step 3: Narrow search to SSH port 22 rejected traffic
+grep -rn ' 22 ' . | grep REJECT
+You should get fewer entries, specifically for port 22.
+Step 4: Get your public IP address as seen from AWS
+•	In AWS Console → EC2 → Security Groups → WebSecurityGroup → Inbound rules → Edit
+•	Add a new rule, Source = My IP
+•	Copy the IP address (without the /32)
+Cancel without saving any changes.
+Step 5: Refine your grep to your IP address (replace <ip-address>)
+bash
+CopyEdit
+grep -rn ' 22 ' . | grep REJECT | grep <ip-address>
+This shows your failed SSH connection attempts recorded in the logs.
+________________________________________
+Step 6: Verify the network interface ID matches your Web Server’s interface
+Get the public IP address of your Web Server instance (replace <WebServerIP>):
+bash
+CopyEdit
+aws ec2 describe-network-interfaces --filters "Name=association.public-ip,Values='<WebServerIP>'" --query 'NetworkInterfaces[*].[NetworkInterfaceId,Association.PublicIp]'
+Compare the returned Network Interface ID to the one in your flow logs (third column typically).
+________________________________________
+Step 7: Convert Unix timestamps to human-readable dates
+From one of the filtered logs, take a start-time or end-time timestamp, e.g., 1554496931, and convert it:
+bash
+CopyEdit
+date -d @1554496931
+This will display the human-readable date/time when the connection attempt was logged
