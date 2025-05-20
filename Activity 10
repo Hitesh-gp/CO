@@ -1,0 +1,186 @@
+Task 1.1.2: Connect to Mom & Pop Café instance (Ubuntu/Linux)
+1.	Download the PEM key file (labsuser.pem) from the AWS Console Credentials panel.
+2.	Open your terminal, navigate to the folder where labsuser.pem is saved. For example:
+bash
+CopyEdit
+cd ~/Downloads
+3.	Set proper permissions on the PEM file:
+bash
+CopyEdit
+chmod 400 labsuser.pem
+4.	Go to AWS Console → EC2 → Instances, select MomPopCafeInstance, and copy its IPv4 Public IP.
+5.	Connect via SSH:
+bash
+CopyEdit
+ssh -i labsuser.pem ec2-user@<public-ip>
+Replace <public-ip> with the actual IP you copied.
+6.	Type yes if prompted about the authenticity of the host.
+You should now be connected to the MomPopCafeInstance.
+________________________________________
+Task 1.1.3: Configure AWS CLI on the instance
+While still connected to the MomPopCafeInstance:
+1.	Find the region the instance is running in:
+bash
+CopyEdit
+curl http://169.254.169.254/latest/dynamic/instance-identity/document | grep region
+Note the region value, e.g., us-east-1.
+2.	Run the AWS CLI configuration:
+bash
+CopyEdit
+aws configure
+When prompted, enter:
+o	AWS Access Key ID (from the Credentials window)
+o	AWS Secret Access Key
+o	Default region name (the region you just found)
+o	Default output format: json
+Leave this SSH session open.
+________________________________________
+Task 1.2: Connect to the CLI Host instance (new terminal window)
+1.	Open a new terminal window.
+2.	Repeat the Task 1.1.2 steps for the CLI Host instance:
+o	Download PEM (if different, otherwise use the same PEM)
+o	Set permissions on PEM
+o	Find CLI Host public IP from EC2 Console
+o	SSH into CLI Host:
+bash
+CopyEdit
+ssh -i labsuser.pem ec2-user@<cli-host-public-ip>
+3.	Configure AWS CLI on the CLI Host just like you did on MomPopCafeInstance:
+bash
+CopyEdit
+aws configure
+Use the same credentials and region.
+________________________________________
+Task 1.3: Remove MariaDB and resize the instance (on MomPopCafeInstance & CLI Host)
+1.	Back on the MomPopCafeInstance SSH window:
+Stop MariaDB and uninstall it:
+bash
+CopyEdit
+sudo systemctl stop mariadb
+sudo yum -y remove mariadb-server
+You should see Complete! after uninstall.
+2.	Close this SSH session to MomPopCafeInstance.
+3.	Switch to CLI Host SSH window (you opened in Task 1.2).
+4.	Find the Instance ID of MomPopCafeInstance:
+bash
+CopyEdit
+aws ec2 describe-instances \
+--filters "Name=tag:Name,Values=MomPopCafeInstance" \
+--query "Reservations[*].Instances[*].InstanceId" \
+--output text
+Note the instance ID (e.g., i-0123456789abcdef0).
+5.	Stop the instance:
+bash
+CopyEdit
+aws ec2 stop-instances --instance-ids <Instance-ID>
+Replace <Instance-ID> with the real ID.
+6.	Change instance type to t2.micro:
+bash
+CopyEdit
+aws ec2 modify-instance-attribute \
+--instance-id <Instance-ID> \
+--instance-type "{\"Value\": \"t2.micro\"}"
+7.	Start the instance:
+bash
+CopyEdit
+aws ec2 start-instances --instance-ids <Instance-ID>
+8.	Wait for the instance to be running:
+bash
+CopyEdit
+aws ec2 describe-instances \
+--instance-ids <Instance-ID> \
+--query "Reservations[*].Instances[*].[InstanceType,PublicDnsName,PublicIpAddress,State.Name]" \
+--output table
+Repeat until State.Name is running.
+9.	Note the new Public DNS Name and Public IP Address from the output.
+________________________________________
+Task 1.3 final step: Test the website
+Open your browser and visit:
+pgsql
+CopyEdit
+http://<Public-DNS-Name>/mompopcafe
+Replace <Public-DNS-Name> with the DNS you just recorded.
+Check all functionality to confirm the website works with the downsized instance and remote RDS.
+
+🧾 Task 2: Use the AWS Pricing Calculator to Estimate AWS Service Costs
+🎯 Goal
+To estimate the monthly AWS cost of running the Mom & Pop Café website before and after EC2 optimization using the AWS Pricing Calculator, and then determine the projected cost savings.
+________________________________________
+🛠️ Task 2.1: Calculate the Costs Before Optimization
+🔧 Configuration (Before Optimization Topology):
+Component	Configuration Detail
+Region	US East (N. Virginia) (example used)
+EC2 Instance	- Instance type: t2.small 
+- Pricing: On-Demand 
+- OS: Linux 
+- Usage: 100%
+EBS Volume	- Type: General Purpose SSD (gp2) 
+- Size: 40 GB (includes 20 GB from old DB)
+RDS Instance	- Type: db.t3.micro 
+- Engine: MariaDB 
+- Deployment: Single-AZ 
+- Storage: 20 GB gp2
+________________________________________
+📊 Steps to Estimate Cost (Before Optimization):
+1.	Open AWS Pricing Calculator
+URL: https://calculator.aws
+→ Click Create estimate
+2.	Add EC2 Instance:
+o	Click Amazon EC2 > Configure
+o	Select Region: e.g., US East (N. Virginia)
+o	Click Advanced estimate
+o	Set:
+	OS: Linux
+	Usage: Constant
+	Instances: 1
+	Instance type: t2.small
+	Pricing model: On-Demand
+	Storage: General Purpose SSD (gp2), Size: 40 GB
+o	Click Save and add service
+3.	Add RDS Instance:
+o	Click Amazon RDS for MariaDB > Configure
+o	Region: Same as EC2
+o	Quantity: 1
+o	Instance type: db.t3.micro
+o	Deployment: Single-AZ
+o	Pricing model: On-Demand
+o	Storage: 20 GB, gp2
+o	Click Save and view summary
+4.	Export Estimate:
+o	Click Share > Copy public link
+o	Click Export > CSV and save locally
+________________________________________
+💵 Estimated Monthly Costs (Before Optimization):
+Service	Monthly Cost
+EC2 Instance	$20.89
+RDS Instance	$14.71
+Total	$35.60
+________________________________________
+🛠️ Task 2.2: Calculate the Costs After Optimization
+🔧 Configuration Changes (After Optimization):
+Component	Optimization Change
+EC2 Instance	- Changed instance type from t2.small → t2.micro
+EBS Volume	- Reduced size from 40 GB → 20 GB (removed old DB data)
+RDS Instance	- Unchanged
+________________________________________
+📊 Steps to Modify Estimate (After Optimization):
+1.	Edit EC2 Entry:
+o	Click Edit next to EC2
+o	Change Instance type to t2.micro
+o	Change EBS storage to 20 GB
+o	Click Update
+2.	Export Estimate:
+o	Click Export > CSV
+o	Save file to your system
+________________________________________
+💵 Estimated Monthly Costs (After Optimization):
+Service	Monthly Cost
+EC2 Instance	$10.47
+RDS Instance	$14.71
+Total	$25.18
+________________________________________
+🧮 Task 2.3: Calculate Cost Savings
+Scenario	EC2 Cost	RDS Cost	Total Monthly Cost
+Before Optimization	$20.89	$14.71	$35.60
+After Optimization	$10.47	$14.71	$25.18
+💰 Savings			$10.42/month
