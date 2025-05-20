@@ -1,0 +1,281 @@
+Task 1: Modify Security Group and Check Website
+1.	Open EC2 service from AWS Services menu.
+2.	Go to Instances, select Cafe Web Server instance.
+3.	Click Security tab → click WebSecurityGroup.
+4.	Under Inbound rules, notice only one rule: HTTP (TCP port 80).
+5.	Click Edit inbound rules → Add Rule:
+o	Port Range: 22
+o	Source: My IP (make sure it shows your exact IP with /32, NOT 0.0.0.0/0)
+6.	Click Save rules.
+7.	To check website:
+o	Copy Public IPv4 address from Cafe Web Server instance.
+o	Open browser and go to: http://<WebServerIP>/mompopcafe/ (replace <WebServerIP> with actual IP).
+8.	Website loads normally (e.g., bakery photos display correctly).
+Task 2: Create AWS CloudTrail Log & Observe the Hacked Website
+Task 2.1: Create AWS CloudTrail Trail
+1.	In AWS Console, search and open CloudTrail service.
+2.	Go to Trails → Create trail.
+3.	Configure trail:
+o	Trail name: Monitor (must be exactly this name)
+o	Storage location: Create a new S3 bucket
+o	Trail log bucket/folder: monitoring#### (#### = 4 random digits)
+o	Log file SSE-KMS encryption: Uncheck (disable)
+o	Keep other defaults, click Next.
+4.	Log events settings:
+o	Event type: Keep Management events checked
+o	API activity: Keep both Read and Write selected
+o	Click Next → then Create trail.
+Task 2.2: Observe the Hacked Website
+1.	Go back to your browser tab with the Café website, refresh page (hold SHIFT + refresh to avoid cache).
+2.	Wait about 1 minute for the hack to appear.
+3.	Notice the website is hacked — wrong image shown.
+4.	Investigate:
+o	Go to EC2 service → select Cafe Web Server instance → Security tab → WebSecurityGroup → Inbound rules.
+o	You’ll see:
+	Your previous rule: port 22 from your IP only
+	New suspicious rule: port 22 open from anywhere (0.0.0.0/0)
+5.	Question: Who added this security hole?
+o	Use CloudTrail logs to find who made this change. CloudTrail tracks user actions in your AWS account.
+Task 3.1 & 3.2: SSH to the EC2 Instance
+For macOS/Linux:
+bash
+CopyEdit
+cd ~/Downloads
+chmod 400 labsuser.pem
+ssh -i labsuser.pem ec2-user@<Public-IPv4-of-Cafe-Web-Server-EC2>
+Type yes if prompted to trust the host.
+________________________________________
+Task 3.3: Download and extract the CloudTrail logs
+bash
+CopyEdit
+mkdir ctraillogs
+cd ctraillogs
+aws s3 ls
+Look for the bucket starting with monitoring in the output.
+Then run (replace <monitoring####> with your bucket name):
+bash
+CopyEdit
+aws s3 cp s3://<monitoring####>/ . --recursive
+Once logs are downloaded, navigate to the logs directory (something like AWSLogs/<account-number>/CloudTrail/<region>/<year>/<month>/<day>):
+bash
+CopyEdit
+cd AWSLogs/<account-num>/CloudTrail/<region>/<yyyy>/<mm>/<dd>/
+ls
+gunzip *.gz
+ls
+________________________________________
+Task 3.4: Analyze logs using grep
+First, pick a file name from the extracted logs, e.g., 1234567890_CloudTrail_us-east-1_20230501.json
+To pretty-print and see structure:
+bash
+CopyEdit
+cat 1234567890_CloudTrail_us-east-1_20230501.json | python3 -m json.tool
+________________________________________
+Filter logs by IP address (your web server IP)
+Replace <WebServerIP> with the public IP of your Cafe Web Server EC2:
+bash
+CopyEdit
+ip=<WebServerIP>
+for i in $(ls); do
+  echo "File: $i"
+  cat $i | python3 -m json.tool | grep sourceIPAddress
+done
+________________________________________
+Filter logs for event names:
+bash
+CopyEdit
+for i in $(ls); do
+  echo "File: $i"
+  cat $i | python3 -m json.tool | grep eventName
+done
+________________________________________
+Task 3.5: Use AWS CLI CloudTrail commands to analyze events
+Lookup console login events:
+bash
+CopyEdit
+aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=ConsoleLogin
+________________________________________
+Lookup all actions on Security Groups:
+bash
+CopyEdit
+aws cloudtrail lookup-events --lookup-attributes AttributeKey=ResourceType,AttributeValue=AWS::EC2::SecurityGroup --output text
+________________________________________
+Find the security group ID attached to the Cafe Web Server:
+bash
+CopyEdit
+region=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | cut -d '"' -f4)
+
+sgId=$(aws ec2 describe-instances --filters "Name=tag:Name,Values='Cafe Web Server'" --query 'Reservations[*].Instances[*].SecurityGroups[*].GroupId' --region $region --output text)
+
+echo $sgId
+________________________________________
+Filter CloudTrail events by the Security Group ID:
+bash
+CopyEdit
+aws cloudtrail lookup-events --lookup-attributes AttributeKey=ResourceType,AttributeValue=AWS::EC2::SecurityGroup --region $region --output text | grep $sgId
+
+Task 4: Analyze CloudTrail Logs Using Amazon Athena
+Overview
+CloudTrail logs contain detailed, verbose event data for every action in your AWS account. Searching these large JSON logs manually or via command-line filtering is tedious.
+Amazon Athena allows you to run SQL queries on logs stored in S3, making log analysis efficient and flexible.
+________________________________________
+4.1 Creating the Athena Table for CloudTrail Logs
+•	Navigate to CloudTrail > Event history in the AWS Console.
+•	Choose Create Athena table from Event history.
+•	Select the S3 bucket (e.g., monitoring####) where CloudTrail stores logs.
+•	Analyze the generated CREATE EXTERNAL TABLE SQL:
+o	Maps CloudTrail JSON fields to table columns.
+o	Nested JSON fields (like userIdentity) become STRUCT or ARRAY types.
+o	Location points to S3 bucket holding the log files.
+•	Create the table. It appears in Athena with a default name incorporating the bucket.
+________________________________________
+4.2 Analyzing Logs in Athena
+•	Open Athena console > Query Editor.
+•	Locate the created CloudTrail table (e.g., cloudtrail_logs_monitoring####).
+•	Set query results location:
+o	Browse to your monitoring S3 bucket.
+o	Append /results/ to the path (e.g., s3://monitoring####/results/).
+•	Run simple exploratory queries:
+sql
+CopyEdit
+SELECT * FROM cloudtrail_logs_monitoring#### LIMIT 5;
+•	Inspect key columns:
+useridentity, eventtime, eventsource, eventname, requestparameters.
+•	Query specific columns for clarity:
+sql
+CopyEdit
+SELECT useridentity.userName, eventtime, eventsource, eventname, requestparameters
+FROM cloudtrail_logs_monitoring####
+LIMIT 30;
+________________________________________
+Challenge: Identify the Hacker
+Goal
+Find who modified the security group associated with the Cafe Web Server, when, from where, and how.
+________________________________________
+Strategy & Useful Tips
+•	Use WHERE clauses to filter relevant events:
+o	Focus on eventsource = 'ec2.amazonaws.com' (EC2-related events).
+o	Look for eventname containing 'Security' or 'AuthorizeSecurityGroupIngress' (commonly used for modifying security groups).
+o	Remove LIMIT to query the entire dataset.
+o	Use LIKE with wildcards % to search for keywords inside event names or parameters.
+•	Sample query to list recent users and event types:
+sql
+CopyEdit
+SELECT DISTINCT useridentity.userName, eventname, eventsource 
+FROM cloudtrail_logs_monitoring####
+WHERE from_iso8601_timestamp(eventtime) > date_add('day', -1, now())
+ORDER BY eventsource;
+•	Check details of suspicious events to find:
+o	User name who made the change.
+o	Exact event time.
+o	Source IP address (sourceIPAddress column).
+o	Whether the hack was performed via Console or API (userAgent or additionalEventData).
+________________________________________
+Sample Query to Identify Security Group Changes:
+sql
+CopyEdit
+SELECT
+  useridentity.userName,
+  eventtime,
+  sourceIPAddress,
+  userAgent,
+  eventname,
+  requestparameters
+FROM cloudtrail_logs_monitoring####
+WHERE eventsource = 'ec2.amazonaws.com'
+  AND eventname LIKE '%SecurityGroup%'
+ORDER BY eventtime DESC
+LIMIT 20;
+________________________________________
+Final Findings (Example)
+•	Hacker User: badactor123
+•	Event Time: 2025-05-18T14:23:45Z
+•	Source IP: 203.0.113.55
+•	Method: Programmatic access via AWS CLI (userAgent contains aws-cli/2.x)
+•	Action: AuthorizeSecurityGroupIngress — opened port 22 (SSH) to 0.0.0.0/0, creating a security hole.
+
+Task 5: Further Analysis of the Hack and Improving Security
+________________________________________
+5.1 Check the OS Users on the Web Server
+•	Goal: Identify unauthorized OS users who logged into the EC2 instance.
+•	Run to see recent authentication events:
+bash
+CopyEdit
+sudo aureport --auth
+•	Finding: A suspicious user chaos-user logged in besides ec2-user.
+•	Check currently logged-in users:
+bash
+CopyEdit
+who
+•	The chaos-user is still actively logged in.
+•	Attempt to delete the user:
+bash
+CopyEdit
+sudo userdel -r chaos-user
+o	This fails because the user session is active.
+•	Kill the active process associated with chaos-user (replace ProcNum with actual PID):
+bash
+CopyEdit
+sudo kill -9 ProcNum
+•	Verify chaos-user is disconnected:
+bash
+CopyEdit
+who
+•	Now delete chaos-user successfully:
+bash
+CopyEdit
+sudo userdel -r chaos-user
+•	Check other users who can log in:
+bash
+CopyEdit
+sudo cat /etc/passwd | grep -v nologin
+•	Confirm no other suspicious users except standard system accounts (root, sync, shutdown, halt).
+________________________________________
+5.2 Update SSH Security Settings
+•	Check SSH daemon config file and note recent modification:
+bash
+CopyEdit
+sudo ls -l /etc/ssh/sshd_config
+•	Edit the SSH config:
+bash
+CopyEdit
+sudo vi /etc/ssh/sshd_config
+•	Use :set number in vi to see line numbers.
+•	At line 61: PasswordAuthentication yes → comment out by adding # at the start.
+•	At line 63: #PasswordAuthentication no → uncomment by removing the #.
+•	Save and exit (:wq).
+•	Restart SSH daemon to apply changes:
+bash
+CopyEdit
+sudo service sshd restart
+•	Note: Restarting SSH may disconnect current session; reconnect if needed.
+•	In the EC2 Console, go to the Security Group for the web server:
+o	Edit inbound rules.
+o	Delete the rule allowing port 22 access from 0.0.0.0/0 (open to the world).
+o	Save the rules.
+________________________________________
+5.3 Fix the Website Content
+•	Navigate to website images directory:
+bash
+CopyEdit
+cd /var/www/html/mompopcafe/images/
+ls -l
+•	Hacker left a backup of original image.
+•	Restore the original image by renaming the backup:
+bash
+CopyEdit
+sudo mv Coffee-and-Pastries.backup Coffee-and-Pastries.png
+•	Refresh the website in the browser:
+o	Use Shift + refresh to avoid cached image.
+•	Verify the website looks correct again.
+________________________________________
+5.4 Delete the AWS Hacker IAM User
+•	Hacker also accessed AWS CLI and changed security group rules.
+•	In AWS Console, open IAM service.
+•	Go to Users, select the user chaos.
+•	Attempt to delete user — error appears because login profile exists.
+•	Delete the login profile via CLI:
+bash
+CopyEdit
+aws iam delete-login-profile --user-name chaos
+•	Return to IAM Console and delete the chaos user successfully.
