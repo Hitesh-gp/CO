@@ -1,0 +1,452 @@
+✅ Task 1: Practice querying JSON-formatted data by using JMESPath
+🔹 Step-by-step Breakdown:
+________________________________________
+1. Open the JMESPath Practice Tool
+Go to: https://jmespath.org/
+This website allows you to practice JSON queries interactively.
+________________________________________
+2. Replace the default JSON with:
+json
+CopyEdit
+{
+  "desserts": [
+    {
+      "name": "Chocolate cake",
+      "price": "20.00"
+    },
+    {
+      "name": "Ice cream",
+      "price": "15.00"
+    },
+    {
+      "name": "Carrot cake",
+      "price": "22.00"
+    }
+  ]
+}
+________________________________________
+3. Try These Queries in the Expression Box
+Query Expression	Result	Explanation
+desserts	Full array	Returns the entire desserts list
+desserts[1]	Ice cream object	Returns second item (0-based index)
+desserts[0].name	"Chocolate cake"	Returns only the name of first dessert
+desserts[0].[name,price]	["Chocolate cake", "20.00"]	Returns specific attributes
+desserts[].name	["Chocolate cake", "Ice cream", "Carrot cake"]	Returns names of all desserts
+desserts[?name=='Carrot cake']	[{ "name": "Carrot cake", "price": "22.00" }]	Uses filter to find dessert by name
+________________________________________
+4. Now Test with CloudFormation-style JSON:
+Replace the JSON with:
+json
+CopyEdit
+{
+  "StackResources": [
+    {
+      "LogicalResourceId": "VPC",
+      "ResourceType": "AWS::EC2::VPC"
+    },
+    {
+      "LogicalResourceId": "PublicSubnet1",
+      "ResourceType": "AWS::EC2::Subnet"
+    },
+    {
+      "LogicalResourceId": "CliHostInstance",
+      "ResourceType": "AWS::EC2::Instance"
+    }
+  ]
+}
+Try this query:
+jmespath
+CopyEdit
+StackResources[?ResourceType == 'AWS::EC2::Instance'].LogicalResourceId
+✅ Result:
+json
+CopyEdit
+["CliHostInstance"]
+
+✅ Task 2 Summary: CloudFormation Stack Troubleshooting
+________________________________________
+### 🔐 2.1: SSH to CLI Host
+Depending on your OS:
+Windows:
+1.	Download the labsuser.ppk file.
+2.	Open PuTTY, go to:
+o	Session: Enter the Public IP of CLI Host.
+o	Connection: Set keepalives to 30.
+o	Connection > SSH > Auth: Load the .ppk file.
+3.	Click Open, then Accept, and log in as:
+bash
+CopyEdit
+ec2-user
+macOS/Linux:
+1.	Download the labsuser.pem file.
+2.	Set permissions:
+bash
+CopyEdit
+chmod 400 labsuser.pem
+3.	SSH into the CLI host:
+bash
+CopyEdit
+ssh -i labsuser.pem ec2-user@<public-ip>
+________________________________________
+🌐 2.2: Configure AWS CLI
+1.	Discover region:
+bash
+CopyEdit
+curl http://169.254.169.254/latest/dynamic/instance-identity/document | grep region
+Example output: "region" : "us-east-1"
+2.	Configure AWS CLI:
+bash
+CopyEdit
+aws configure
+o	Access Key ID: from Credentials panel
+o	Secret Access Key: from Credentials panel
+o	Region: as above (e.g., us-east-1)
+o	Output format: json
+________________________________________
+📦 2.3: Create CloudFormation Stack
+1.	View template:
+bash
+CopyEdit
+less template1.yaml
+# Press q to exit
+2.	Create the stack:
+bash
+CopyEdit
+aws cloudformation create-stack \
+  --stack-name myStack \
+  --template-body file://template1.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameters ParameterKey=KeyName,ParameterValue=vockey
+3.	Watch stack resource creation:
+bash
+CopyEdit
+watch -n 5 -d \
+aws cloudformation describe-stack-resources \
+--stack-name myStack \
+--query 'StackResources[*].[ResourceType,ResourceStatus]' \
+--output table
+4.	Wait a few minutes. Notice resources start to delete. This means stack creation failed.
+5.	View stack status:
+bash
+CopyEdit
+watch -n 5 -d \
+aws cloudformation describe-stacks \
+--stack-name myStack \
+--output table
+6.	Get failure reason:
+bash
+CopyEdit
+aws cloudformation describe-stack-events \
+--stack-name myStack \
+--query "StackEvents[?ResourceStatus == 'CREATE_FAILED']"
+o	You’ll likely see:
+json
+CopyEdit
+"ResourceStatusReason": "WaitCondition timed out. The WaitCondition didn’t receive the required number of signals from an Amazon EC2 instance."
+This means the user-data script didn’t signal success back, possibly due to an error in that script or execution delay.
+7.	Confirm final stack status:
+bash
+CopyEdit
+aws cloudformation describe-stacks \
+--stack-name myStack \
+--output table
+→ Status should be ROLLBACK_COMPLETE
+8.	Delete the failed stack:
+bash
+CopyEdit
+aws cloudformation delete-stack --stack-name myStack
+
+Task 2.4: Avoid Rollback on an AWS CloudFormation Stack
+Now, re-run the create-stack command with rollback disabled. This allows you to debug failures without losing resources.
+bash
+CopyEdit
+aws cloudformation create-stack \
+  --stack-name myStack \
+  --template-body file://template1.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --on-failure DO_NOTHING \
+  --parameters ParameterKey=KeyName,ParameterValue=vockey
+--on-failure DO_NOTHING tells CloudFormation not to delete any resources if stack creation fails. This helps with investigation.
+________________________________________
+Monitor Stack Resource Creation
+Run the following to check resource creation status:
+bash
+CopyEdit
+watch -n 5 -d \
+aws cloudformation describe-stack-resources \
+  --stack-name myStack \
+  --query 'StackResources[*].[ResourceType,ResourceStatus]' \
+  --output table
+Press CTRL+C to exit the watch utility once all resources are in a final state (CREATE_COMPLETE or CREATE_FAILED).
+________________________________________
+Check Stack Status
+bash
+CopyEdit
+aws cloudformation describe-stacks \
+  --stack-name myStack \
+  --output table
+You should see StackStatus as CREATE_FAILED.
+________________________________________
+View Failure Events
+bash
+CopyEdit
+aws cloudformation describe-stack-events \
+  --stack-name myStack \
+  --query "StackEvents[?ResourceStatus == 'CREATE_FAILED']"
+You’ll likely see that the WaitCondition failed due to timeout.
+________________________________________
+Get EC2 Public IP
+bash
+CopyEdit
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values='Web Server'" \
+  --query 'Reservations[].Instances[].[State.Name,PublicIpAddress]'
+Copy the public IP address of the EC2 instance.
+________________________________________
+Connect to EC2 Instance via SSH
+Open a new terminal and run:
+bash
+CopyEdit
+ssh -i vockey.pem ec2-user@<Public-IP-Here>
+Replace <Public-IP-Here> with the IP you copied. Use correct user and PEM file based on your OS and AMI.
+________________________________________
+Inspect Log Files for Failure
+View cloud-init log:
+bash
+CopyEdit
+sudo tail -50 /var/log/cloud-init-output.log
+Look for:
+•	No package http available.
+•	util.py[WARNING]: Failed running /var/lib/cloud/instance/scripts/part-001
+________________________________________
+View the Userdata Script
+bash
+CopyEdit
+sudo cat /var/lib/cloud/instance/scripts/part-001
+You'll see a script that includes:
+bash
+CopyEdit
+#!/bin/bash -e
+...
+yum install -y http
+The problem is: there is no package named http — it should be httpd (Apache).
+The -e in the shebang causes the script to fail immediately on any error.
+Exit the instance:
+bash
+CopyEdit
+exit
+________________________________________
+Task 2.5: Fix the Issue and Successfully Create the Stack
+Edit the CloudFormation Template
+Open the template:
+bash
+CopyEdit
+vim template1.yaml
+Use the arrow keys or type :128 to go to line 128.
+Change this line:
+yaml
+CopyEdit
+yum install -y http
+to:
+yaml
+CopyEdit
+yum install -y httpd
+Then save and exit:
+vim
+CopyEdit
+Press `a` to edit, then ESC, then type :wq and hit ENTER
+________________________________________
+Verify the Fix
+bash
+CopyEdit
+cat template1.yaml | grep httpd
+You should see the corrected line(s).
+________________________________________
+Delete the Failed Stack
+bash
+CopyEdit
+aws cloudformation delete-stack --stack-name myStack
+Then monitor deletion:
+bash
+CopyEdit
+watch -n 5 -d \
+aws cloudformation describe-stacks \
+  --stack-name myStack \
+  --output table
+When output disappears (stack no longer exists), press CTRL+C.
+________________________________________
+Recreate the Stack
+bash
+CopyEdit
+aws cloudformation create-stack \
+  --stack-name myStack \
+  --template-body file://template1.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --on-failure DO_NOTHING \
+  --parameters ParameterKey=KeyName,ParameterValue=vockey
+Monitor resource creation:
+bash
+CopyEdit
+watch -n 5 -d \
+aws cloudformation describe-stack-resources \
+  --stack-name myStack \
+  --query 'StackResources[*].[ResourceType,ResourceStatus]' \
+  --output table
+Wait until all resources have completed. Then press CTRL+C.
+________________________________________
+Verify Final Stack Status
+bash
+CopyEdit
+aws cloudformation describe-stacks \
+  --stack-name myStack \
+  --output table
+You should now see:
+bash
+CopyEdit
+StackStatus: CREATE_COMPLETE
+Also, check the Outputs section for:
+•	Public IP of the EC2 instance (web server)
+•	S3 Bucket name
+________________________________________
+Test the Web Server
+1.	Copy the public IP from the outputs.
+2.	Open a browser tab.
+3.	Enter the public IP into the address bar.
+✅ You should see:
+pgsql
+CopyEdit
+Hello from your web server!
+
+Task 3 Summary: Detecting and Handling Drift in AWS CloudFormation
+________________________________________
+Step 3.1: Manually Modify Security Group
+1.	Go to AWS Management Console → EC2 → Instances → Select "Web Server".
+2.	Click on the security group WebServerSG linked in the description.
+3.	Go to Inbound rules → Edit.
+4.	Change the SSH (port 22) rule's Source from 0.0.0.0/0 (any IP) to My IP (your current IP).
+5.	Save the changes.
+________________________________________
+Step 3.2: Add an Object to the S3 Bucket
+In your CLI Host terminal:
+bash
+CopyEdit
+# Get the bucket name from CloudFormation stack outputs and store in a variable
+bucketName=$(aws cloudformation describe-stacks \
+  --stack-name myStack \
+  --query "Stacks[*].Outputs[?OutputKey=='BucketName'].[OutputValue]" \
+  --output text)
+
+echo "bucketName = $bucketName"
+
+# Create an empty file
+touch myfile
+
+# Copy the file to the S3 bucket
+aws s3 cp myfile s3://$bucketName/
+
+# Verify the file exists in the bucket
+aws s3 ls $bucketName/
+________________________________________
+Step 3.3: Detect Drift
+1.	Start drift detection:
+bash
+CopyEdit
+driftId=$(aws cloudformation detect-stack-drift --stack-name myStack --query StackDriftDetectionId --output text)
+echo "Drift detection started: $driftId"
+2.	Check drift detection status (repeat until status is not DETECTION_IN_PROGRESS):
+bash
+CopyEdit
+aws cloudformation describe-stack-drift-detection-status --stack-drift-detection-id $driftId --query StackDriftStatus --output text
+3.	Confirm stack drift status:
+bash
+CopyEdit
+# Should show DRIFTED if manual changes detected
+4.	List resource drifts with a readable query:
+bash
+CopyEdit
+aws cloudformation describe-stack-resources \
+  --stack-name myStack \
+  --query 'StackResources[*].[ResourceType,ResourceStatus,DriftInformation.StackResourceDriftStatus]' \
+  --output table
+•	Expect all resources IN_SYNC except the manually modified security group (should be MODIFIED).
+•	The S3 bucket remains IN_SYNC since file content changes do not register as drift.
+5.	See detailed drift differences for modified resources:
+bash
+CopyEdit
+aws cloudformation describe-stack-resource-drifts \
+  --stack-name myStack \
+  --stack-resource-drift-status-filters MODIFIED
+•	Property differences will show that port 22 source IP changed from 0.0.0.0/0 to your specific IP.
+________________________________________
+Attempt to Update Stack
+Try updating the stack normally:
+bash
+CopyEdit
+aws cloudformation update-stack \
+  --stack-name myStack \
+  --template-body file://template1.yaml \
+  --parameters ParameterKey=KeyName,ParameterValue=vockey
+•	Expected: Update fails due to drift.
+•	Drift is not automatically resolved by updates.
+•	You must either update the CloudFormation template to match manual changes or manually revert changes in AWS Console.
+
+Task 4: Deleting the Stack When S3 Bucket Has Objects
+________________________________________
+Step 1: Try deleting the stack (expected to fail)
+bash
+CopyEdit
+aws cloudformation delete-stack --stack-name myStack
+Then watch stack resources deletion status:
+bash
+CopyEdit
+watch -n 5 -d aws cloudformation describe-stack-resources --stack-name myStack --query 'StackResources[*].[ResourceType,ResourceStatus]' --output table
+You will notice that all resources except the S3 bucket get deleted. The bucket fails because it has objects.
+________________________________________
+Step 2: Check stack status (will show DELETE_FAILED)
+bash
+CopyEdit
+aws cloudformation describe-stacks --stack-name myStack --output table
+Notice "StackStatus": "DELETE_FAILED" and "StackStatusReason": "The following resource(s) failed to delete: [MyBucket]."
+________________________________________
+Challenge: Keep the bucket and file, but still delete the stack
+________________________________________
+Why?
+•	You cannot delete an S3 bucket if it has objects.
+•	You want to keep the bucket and objects intact.
+•	You want the stack deleted successfully.
+________________________________________
+Step 3: Get the Logical Resource ID for the S3 bucket
+Run this command to get the logical resource ID for the bucket resource in your stack:
+bash
+CopyEdit
+aws cloudformation list-stack-resources --stack-name myStack --query "StackResourceSummaries[?ResourceType=='AWS::S3::Bucket'].LogicalResourceId" --output text
+Suppose the output is:
+nginx
+CopyEdit
+MyBucket
+________________________________________
+Step 4: Delete the stack retaining the S3 bucket resource
+Use the --retain-resources option with the logical ID of the bucket:
+bash
+CopyEdit
+aws cloudformation delete-stack --stack-name myStack --retain-resources MyBucket
+This will:
+•	Delete all stack resources except the specified bucket.
+•	The bucket and its files remain untouched.
+•	The stack will delete successfully.
+________________________________________
+Step 5: Verify the stack deletion
+Run:
+bash
+CopyEdit
+aws cloudformation describe-stacks --stack-name myStack
+•	You will either get an error if the stack is deleted or see status DELETE_COMPLETE.
+________________________________________
+Optional Bonus: One-liner script
+Get the bucket logical ID and delete the stack retaining the bucket:
+bash
+CopyEdit
+bucketLogicalId=$(aws cloudformation list-stack-resources --stack-name myStack --query "StackResourceSummaries[?ResourceType=='AWS::S3::Bucket'].LogicalResourceId | [0]" --output text)
+
+aws cloudformation delete-stack --stack-name myStack --retain-resources $bucketLogicalId
+
