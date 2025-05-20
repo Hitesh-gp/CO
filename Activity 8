@@ -1,0 +1,279 @@
+Task 1: Connect to the AWS CLI Host via SSH
+Task 1.1: SSH for Windows Users
+•	Use PuTTY with .ppk file.
+•	Enable keep-alives: Connection → Seconds between keepalives → 30.
+•	Auth path: Connection > SSH > Auth → Browse labsuser.ppk.
+•	Host IP: Use public IPv4 of CLI Host EC2 instance.
+•	Username: ec2-user.
+Task 1.2: SSH for macOS/Linux Users
+•	Use terminal with .pem key.
+•	Navigate to PEM location:
+cd ~/Downloads
+•	Change permission:
+chmod 400 labsuser.pem
+•	Get public IPv4 address from EC2 instance.
+•	Connect via SSH:
+ssh -i labsuser.pem ec2-user@<public-ip>
+________________________________________
+Task 1.3: Configure AWS CLI
+Run in terminal:
+bash
+CopyEdit
+curl http://169.254.169.254/latest/dynamic/instance-identity/document | grep region
+Run CLI configuration:
+bash
+CopyEdit
+aws configure
+Provide:
+•	AWS Access Key ID
+•	AWS Secret Access Key
+•	Region (e.g., us-east-1)
+•	Output format: json
+
+Task 2: Create and initialize the Amazon S3 share bucket using the AWS CLI (s3 subcommand):
+________________________________________
+✅ Step 1: Create the S3 bucket
+Run the following command in your SSH terminal. Replace:
+•	xxxnnn → with your initials and a random 3-digit number (e.g., rb123)
+•	<region> → with your AWS region (e.g., us-east-1, us-west-2, etc.)
+bash
+CopyEdit
+aws s3 mb s3://mompopcafe-rb123 --region us-west-2
+✔️ If successful, you'll see:
+makefile
+CopyEdit
+make_bucket: mompopcafe-rb123
+________________________________________
+✅ Step 2: Sync the initial images to the S3 bucket
+Upload the files from the ~/initial-images/ directory to the bucket under the /images prefix:
+bash
+CopyEdit
+aws s3 sync ~/initial-images/ s3://mompopcafe-rb123/images
+✔️ You should see output similar to:
+bash
+CopyEdit
+upload: ~/initial-images/img1.jpg to s3://mompopcafe-rb123/images/img1.jpg
+upload: ~/initial-images/img2.jpg to s3://mompopcafe-rb123/images/img2.jpg
+...
+________________________________________
+✅ Step 3: Verify the uploaded images
+List the contents of the /images prefix in your bucket, with a human-readable summary:
+bash
+CopyEdit
+aws s3 ls s3://mompopcafe-rb123/images/ --human-readable --summarize
+✔️ The output should look something like:
+yaml
+CopyEdit
+2025-05-20 14:32:02     500.0 KiB img1.jpg
+2025-05-20 14:32:02     200.0 KiB img2.jpg
+
+Total Objects: 2
+   Total Size: 700.0 KiB
+________________________________________
+🟢 Done!
+You’ve successfully:
+•	Created an S3 bucket
+•	Uploaded sample images
+•	Verified the upload with a detailed listing
+✅ Task 3: Review the media company user and permissions
+________________________________________
+📘 Task 3.1: Review the mompopuser IAM User
+•	Go to IAM > Users > mompopuser.
+•	Under Permissions, expand the AmazonS3ReadOnlyAccess policy.
+o	✅ S3 Actions Allowed:
+	Full List permissions
+	Limited Read permissions
+o	✅ S3 Resources Affected:
+	All objects in S3 (as defined in the policy JSON)
+________________________________________
+📘 Task 3.2: Review the mediaco IAM Group
+•	Go to IAM > User groups > mediaco.
+•	Under Permissions, expand the policies:
+✅ IAMUserChangePassword
+o	Allows group members to change their own password.
+✅ mediaCoPolicy
+o	Statement 1 (AllowGroupToSeeBucketListInTheConsole)
+	Lets users view the list of S3 buckets in the account (Console only).
+o	Statement 2 (AllowRootLevelListingOfTheBucket)
+	Lets users view top-level contents in the mompopcafe bucket.
+o	Statement 3 (AllowUserSpecificActionsOnlyInTheSpecificPrefix)
+	Grants read, write, delete access in mompopcafe-*/images folder:
+	GetObject
+	PutObject
+	DeleteObject
+	Version-related permissions included
+________________________________________
+📘 Task 3.3: Review the mediacouser IAM User
+•	Go to IAM > Users > mediacouser.
+•	Under Permissions, verify:
+o	IAMUserChangePassword ✅
+o	mediaCoPolicy ✅
+•	Go to Groups tab, confirm membership in mediaco group.
+•	Go to Security credentials tab > Access keys > Create access key
+o	🔐 Download the .csv file with Access Key & Secret Key
+•	Copy your 12-digit AWS Account ID (without dashes).
+o	Found in the top-right dropdown (voclabs/user...)
+________________________________________
+🧪 Task 3.4: Test mediacouser Permissions
+🧑‍💻 Open Incognito or different browser to login as mediacouser.
+Steps:
+1.	Go to: https://aws.amazon.com/console/
+2.	Paste Account ID (no dashes), choose IAM user login.
+3.	Login:
+o	Username: mediacouser
+o	Password: Training1!
+________________________________________
+✅ S3 Tests (Bucket: mompopcafe-xxxnnn):
+1.	📂 Navigate to images folder.
+2.	🖼️ View: Open Donuts.jpg – should load in new tab.
+3.	⬆️ Upload: Upload a .png or .txt file – should succeed.
+4.	❌ Delete: Select Cup-of-Hot-Chocolate.jpg, delete it – should succeed.
+5.	🔒 Unauthorized Test:
+o	Try accessing Permissions tab at bucket level – ❌ Access denied.
+o	Try uploading file to root of bucket – ❌ Operation denied.
+
+✅ Task 4.1: Create and Configure the SNS Topic
+1. Create the SNS Topic
+•	Go to Simple Notification Service (SNS) from the AWS Console.
+•	Select Topics → Create topic.
+•	Choose Standard.
+•	Enter Name: s3NotificationTopic.
+•	Click Create topic.
+2. Save the Topic ARN
+•	Copy the Topic ARN (e.g., arn:aws:sns:us-east-1:123456789012:s3NotificationTopic) for use in upcoming steps.
+________________________________________
+3. Set the Access Policy
+•	Go to your newly created topic → click Edit.
+•	Expand Access policy - optional.
+•	Replace the JSON policy with the following (customize ARN and bucket name):
+json
+CopyEdit
+{
+  "Version": "2008-10-17",
+  "Id": "S3PublishPolicy",
+  "Statement": [
+    {
+      "Sid": "AllowPublishFromS3",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "s3.amazonaws.com"
+      },
+      "Action": "SNS:Publish",
+      "Resource": "arn:aws:sns:us-east-1:123456789012:s3NotificationTopic",
+      "Condition": {
+        "ArnLike": {
+          "aws:SourceArn": "arn:aws:s3:::mompopcafe-xxxnnn"
+        }
+      }
+    }
+  ]
+}
+Replace:
+•	"Resource" with your SNS Topic ARN
+•	"aws:SourceArn" with your S3 bucket ARN (e.g., arn:aws:s3:::mompopcafe-xxxnnn)
+•	Click Save changes.
+________________________________________
+4. Subscribe mompopuser (You) to the Topic
+•	Still in SNS, choose Create subscription.
+•	Protocol: Email
+•	Endpoint: <your email address> (you must access this inbox)
+•	Click Create subscription
+•	Go to your email inbox → confirm subscription via the Confirm subscription link.
+________________________________________
+✅ Task 4.2: Add Event Notification to the S3 Bucket
+1. Create the Notification Configuration File
+•	Open terminal/SSH into your CLI Host instance
+bash
+CopyEdit
+vi s3EventNotification.json
+•	Press i to enter insert mode, then paste the following JSON (customized):
+json
+CopyEdit
+{
+  "TopicConfigurations": [
+    {
+      "TopicArn": "arn:aws:sns:us-east-1:123456789012:s3NotificationTopic",
+      "Events": ["s3:ObjectCreated:*", "s3:ObjectRemoved:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "images/"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+Replace the "TopicArn" with your actual SNS topic ARN.
+•	Press ESC, then type :wq to save and exit.
+________________________________________
+2. Apply the Event Notification to the S3 Bucket
+Run this command in your SSH terminal:
+bash
+CopyEdit
+aws s3api put-bucket-notification-configuration --bucket mompopcafe-xxxnnn --notification-configuration file://s3EventNotification.json
+Replace mompopcafe-xxxnnn with your actual S3 bucket name.
+________________________________________
+3. Verify the Setup
+•	Wait a moment and check your email inbox.
+•	You should receive an email with subject: Amazon S3 Notification.
+•	The body should look like:
+json
+CopyEdit
+{
+  "Service": "Amazon S3",
+  "Event": "s3:TestEvent",
+  "Time": "2025-05-20T06:04:27.405Z",
+  "Bucket": "mompopcafe-xxxnnn",
+  "RequestId": "...",
+  "HostId": "..."
+}
+
+Task 5: Test the Amazon S3 Share Bucket Event Notifications! Here's a quick recap and checklist of what you did in this task to verify your S3 bucket configuration:
+________________________________________
+✅ Step-by-step Summary & Validation Checklist
+1. Configured AWS CLI with mediacouser credentials
+•	Ran aws configure and entered:
+o	Access Key ID & Secret Access Key from accessKeys.csv
+o	Default region (kept unchanged)
+o	Output format: json
+________________________________________
+2. Tested put-object event notification
+•	Command:
+bash
+CopyEdit
+aws s3api put-object --bucket <mompopcafe-xxxnnn> --key images/Caramel-Delight.jpg --body ~/new-images/Caramel-Delight.jpg
+•	✅ Email received with:
+o	"eventName": "ObjectCreated:Put"
+o	"key": "images/Caramel-Delight.jpg"
+________________________________________
+3. Tested get-object operation (no notification expected)
+•	Command:
+bash
+CopyEdit
+aws s3api get-object --bucket <mompopcafe-xxxnnn> --key images/Donuts.jpg Donuts.jpg
+•	✅ File downloaded
+•	✅ No email received (as expected — get is not a tracked event)
+________________________________________
+4. Tested delete-object event notification
+•	Command:
+bash
+CopyEdit
+aws s3api delete-object --bucket <mompopcafe-xxxnnn> --key images/Strawberry-Tarts.jpg
+•	✅ Email received with:
+o	"eventName": "ObjectRemoved:Delete"
+o	"key": "images/Strawberry-Tarts.jpg"
+________________________________________
+5. Tested unauthorized action (put-object-acl)
+•	Command:
+bash
+CopyEdit
+aws s3api put-object-acl --bucket <mompopcafe-xxxnnn> --key images/Donuts.jpg --acl public-read
+•	❌ Operation failed with:
+plaintext
+CopyEdit
+An error occurred (AccessDenied) when calling the PutObjectAcl operation: Access Denied
+•	✅ Expected — confirms permissions are correctly restricted
